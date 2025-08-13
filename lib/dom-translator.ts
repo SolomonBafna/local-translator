@@ -1,3 +1,5 @@
+import { TextSegmenter } from './text-segmenter';
+
 interface Rule {
   selector: string;
   keepSelector?: string;
@@ -13,6 +15,12 @@ interface Rule {
   onRenderStart?: (el: Element, rawText: string) => void;
   onRemove?: (el: Element) => void;
   translateTitle?: boolean;
+  segmentOptions?: {
+    maxChunkSize?: number;
+    minChunkSize?: number;
+    preserveSentences?: boolean;
+    preserveContext?: boolean;
+  };
 }
 
 interface Setting {
@@ -37,7 +45,7 @@ function debounce<T extends (...args: any[]) => void>(fn: T, ms = 200): T {
 }
 
 export class DomTranslator {
-  private rule: Required<Omit<Rule, 'keepSelector' | 'terms' | 'selectStyle' | 'parentStyle' | 'onRenderStart' | 'onRemove' | 'hoverKey'>> & Pick<Rule, 'keepSelector' | 'terms' | 'selectStyle' | 'parentStyle' | 'onRenderStart' | 'onRemove' | 'hoverKey'>;
+  private rule: Required<Omit<Rule, 'keepSelector' | 'terms' | 'selectStyle' | 'parentStyle' | 'onRenderStart' | 'onRemove' | 'hoverKey' | 'segmentOptions'>> & Pick<Rule, 'keepSelector' | 'terms' | 'selectStyle' | 'parentStyle' | 'onRenderStart' | 'onRemove' | 'hoverKey' | 'segmentOptions'>;
   private setting: Required<Setting>;
   private translate: (text: string) => Promise<string>;
   private rootSet = new Set<Document | ShadowRoot>();
@@ -48,6 +56,9 @@ export class DomTranslator {
   private _origAttachShadow?: typeof HTMLElement.prototype.attachShadow;
   private _retranslate: () => void;
   private _isUpdating = false;
+  private textSegmenter: TextSegmenter;
+  private translationCache = new Map<string, string>();
+  private translatingFingerprints = new Set<string>();
 
   constructor(rule: Rule, setting: Setting, translate: (text: string) => Promise<string>) {
     this.rule = {
@@ -65,6 +76,7 @@ export class DomTranslator {
       onRenderStart: rule.onRenderStart,
       onRemove: rule.onRemove,
       translateTitle: rule.translateTitle ?? false,
+      segmentOptions: rule.segmentOptions,
     };
 
     this.setting = {
@@ -78,6 +90,16 @@ export class DomTranslator {
     };
 
     this.translate = translate;
+    
+    const skipTagsSet = new Set(this.setting.skipTags);
+    this.textSegmenter = new TextSegmenter({
+      maxChunkSize: rule.segmentOptions?.maxChunkSize ?? rule.maxLen ?? 1000,
+      minChunkSize: rule.segmentOptions?.minChunkSize ?? rule.minLen ?? 50,
+      preserveSentences: rule.segmentOptions?.preserveSentences ?? true,
+      preserveContext: rule.segmentOptions?.preserveContext ?? true,
+      skipTags: skipTagsSet,
+    });
+    
     this._retranslate = debounce(() => {
       if (this._isUpdating) return;
       this._isUpdating = true;
@@ -115,6 +137,9 @@ export class DomTranslator {
     this._restoreTitle();
     this.rootSet.clear();
     this.targetMap.clear();
+    this.textSegmenter.clearCache();
+    this.translationCache.clear();
+    this.translatingFingerprints.clear();
   }
 
   updateRule(patch: Partial<Rule>): void {
@@ -182,11 +207,33 @@ export class DomTranslator {
       }
     });
     
-    root.querySelectorAll('*').forEach(el => {
-      if ((el as Element).shadowRoot) {
-        this._scanAll((el as Element).shadowRoot!);
+    // Enhanced Shadow DOM detection for web components
+    this._discoverShadowRoots(root);
+  }
+  
+  private _discoverShadowRoots(root: Document | ShadowRoot): void {
+    const walker = document.createTreeWalker(
+      root as Node,
+      NodeFilter.SHOW_ELEMENT,
+      {
+        acceptNode: (node) => {
+          const element = node as Element;
+          // Check for shadow root or custom elements that might have shadow DOM
+          if (element.shadowRoot || element.tagName.includes('-')) {
+            return NodeFilter.FILTER_ACCEPT;
+          }
+          return NodeFilter.FILTER_SKIP;
+        }
       }
-    });
+    );
+    
+    let node;
+    while (node = walker.nextNode()) {
+      const element = node as Element;
+      if (element.shadowRoot && !this.rootSet.has(element.shadowRoot)) {
+        this._scanAll(element.shadowRoot);
+      }
+    }
   }
 
   private _collectTargets(root: Document | ShadowRoot, selectorSpec: string): Element[] {
@@ -206,12 +253,45 @@ export class DomTranslator {
       }
     });
     
-    const skip = new Set(this.setting.skipTags);
-    
+    // Helper to detect direct text at this node level (not counting descendants)
+    const hasDirectText = (el: Element): boolean => {
+      for (const child of el.childNodes) {
+        if (child.nodeType === Node.TEXT_NODE && (child.textContent || '').trim()) {
+          return true;
+        }
+      }
+      return false;
+    };
+
+    // Use computed styles for better filtering
     return nodes.filter(n => {
+      // Check if element should be skipped based on computed styles
+      const style = window.getComputedStyle(n);
+      
+      // Skip invisible elements
+      if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') {
+        return false;
+      }
+      
+      // Skip elements with translation host already
+      if (n.matches(this.setting.hostTag) || n.querySelector(this.setting.hostTag)) {
+        return false;
+      }
+      
+      // Skip based on tag name if it's in skip list
+      const skip = new Set(this.setting.skipTags);
       if (skip.has(n.localName)) return false;
-      if (n.matches(this.setting.hostTag) || n.querySelector(this.setting.hostTag)) return false;
-      return !nodes.some(m => m !== n && n.contains(m));
+      
+      // Skip custom elements that are likely components
+      if (n.tagName.includes('-') && !n.shadowRoot && !n.textContent?.trim()) {
+        return false;
+      }
+      
+      // Avoid nested selections, but keep containers that have their own direct text
+      // If n contains other selected nodes, keep n only if it has direct text to translate
+      const containsOther = nodes.some(m => m !== n && n.contains(m));
+      if (!containsOther) return true;
+      return hasDirectText(n);
     });
   }
 
@@ -264,11 +344,37 @@ export class DomTranslator {
     
     this.rule.onRenderStart?.(node, raw);
     
-    const { q, keeps } = this._buildPlaceholders(node);
-    const cleanLen = q.replace(/\[(\d+)\]/g, '').trim().length;
-    if (cleanLen < this.rule.minLen || cleanLen > this.rule.maxLen) {
-      return;
+    // Use the new text segmenter for intelligent splitting
+    // Exclude nested target elements so containers only translate their direct text
+    const excludeSet = new Set<Element>();
+    try {
+      const selectors = this.rule.selector.split(';').map(s => s.trim()).filter(Boolean);
+      selectors.forEach(sel => {
+        if (!sel) return;
+        if (sel.includes('::shadow::')) {
+          const [outer] = sel.split('::shadow::').map(s => s.trim());
+          if (outer) node.querySelectorAll(outer).forEach(e => excludeSet.add(e));
+        } else {
+          node.querySelectorAll(sel).forEach(e => excludeSet.add(e));
+        }
+      });
+      // Do not exclude the node itself
+      excludeSet.delete(node);
+    } catch {
+      // Best effort; on selector errors, proceed without exclusions
+      excludeSet.clear();
     }
+
+    const segments = this.textSegmenter.segmentElement(node, excludeSet.size ? excludeSet : undefined);
+    if (segments.length === 0) return;
+    
+    // Filter segments by size
+    const validSegments = segments.filter(seg => {
+      const len = seg.text.length;
+      return len >= this.rule.minLen && len <= this.rule.maxLen;
+    });
+    
+    if (validSegments.length === 0) return;
     
     const host = document.createElement(this.setting.hostTag);
     host.setAttribute('data-style', this.rule.textStyle);
@@ -279,25 +385,84 @@ export class DomTranslator {
     this.targetMap.set(node, cache);
     
     try {
-      const translatedText = await this.translate(q);
-      if (!translatedText) {
-        host.remove();
-        return;
-      }
+      // Process segments with caching and batching
+      const translationPromises = validSegments.map(async (segment) => {
+        // Check cache first
+        const cached = this.translationCache.get(segment.fingerprint);
+        if (cached) {
+          return { segment, translation: cached };
+        }
+        
+        // Check if already translating
+        if (this.translatingFingerprints.has(segment.fingerprint)) {
+          // Wait a bit and check cache again
+          await new Promise(resolve => setTimeout(resolve, 100));
+          const cached = this.translationCache.get(segment.fingerprint);
+          if (cached) {
+            return { segment, translation: cached };
+          }
+        }
+        
+        // Mark as translating
+        this.translatingFingerprints.add(segment.fingerprint);
+        
+        try {
+          // Add context if available
+          let textToTranslate = segment.text;
+          if (segment.context?.before) {
+            textToTranslate = `...${segment.context.before} ${textToTranslate}`;
+          }
+          if (segment.context?.after) {
+            textToTranslate = `${textToTranslate} ${segment.context.after}...`;
+          }
+          
+          const translation = await this.translate(textToTranslate);
+          
+          // Extract the main translation (remove context markers)
+          let cleanTranslation = translation;
+          if (segment.context?.before) {
+            cleanTranslation = cleanTranslation.replace(/^[^\s]*\s*/, '');
+          }
+          if (segment.context?.after) {
+            cleanTranslation = cleanTranslation.replace(/\s*[^\s]*$/, '');
+          }
+          
+          // Cache the translation
+          this.translationCache.set(segment.fingerprint, cleanTranslation);
+          
+          return { segment, translation: cleanTranslation };
+        } finally {
+          this.translatingFingerprints.delete(segment.fingerprint);
+        }
+      });
+      
+      const results = await Promise.all(translationPromises);
       
       if (this.targetMap.get(node)?.lastId !== transId) {
         host.remove();
         return;
       }
       
-      const frag = this._buildFragmentFromTranslated(translatedText, keeps);
+      // Build the final translated content
+      const frag = document.createDocumentFragment();
       
       if (this.rule.displayMode === 'replace') {
-        // 直接替换目标节点内容，避免通过 innerHTML 注入
-        (node as HTMLElement).replaceChildren(frag);
+        // Replace mode: update text nodes in place
+        results.forEach(({ segment, translation }) => {
+          segment.nodes.forEach((textNode, index) => {
+            // Distribute translation across original text nodes
+            const portionSize = Math.ceil(translation.length / segment.nodes.length);
+            const start = index * portionSize;
+            const portion = translation.slice(start, start + portionSize);
+            textNode.textContent = portion;
+          });
+        });
         host.remove();
       } else {
-        // 覆盖模式渲染到 host
+        // Overlay mode: build new content
+        results.forEach(({ translation }) => {
+          frag.appendChild(document.createTextNode(translation + ' '));
+        });
         host.replaceChildren(frag);
       }
     } catch (err) {
@@ -366,35 +531,84 @@ export class DomTranslator {
   private _observeRoots(): void {
     this.mo = new MutationObserver(mutations => {
       if (this._isUpdating) return;
-      let needRescan = false;
+      
+      const addedElements = new Set<Element>();
+      const removedElements = new Set<Element>();
+      
       for (const mutation of mutations) {
-        if (mutation.type !== 'childList' || !mutation.addedNodes?.length) continue;
-
-        let meaningful = false;
-        mutation.addedNodes.forEach(n => {
-          if (meaningful) return;
-          if (n.nodeType !== 1) return; // ignore text/comment
-          const el = n as Element;
-          if (el.id === 'kt-trans-css') return; // ignore our injected style
-          if (el.matches?.(this.setting.hostTag)) return; // ignore our host tag
-          if (el.querySelector?.(this.setting.hostTag)) return; // ignore descendants containing our host
-          meaningful = true;
-        });
-
-        if (meaningful) {
-          needRescan = true;
-          break;
+        if (mutation.type === 'childList') {
+          mutation.addedNodes.forEach(n => {
+            if (n.nodeType === 1) {
+              const el = n as Element;
+              // Skip our own elements
+              if (el.id === 'kt-trans-css' || 
+                  el.matches?.(this.setting.hostTag) || 
+                  el.querySelector?.(this.setting.hostTag)) {
+                return;
+              }
+              addedElements.add(el);
+              
+              // Check for shadow roots in added elements
+              if (el.shadowRoot) {
+                this._scanAll(el.shadowRoot);
+              }
+            }
+          });
+          
+          mutation.removedNodes.forEach(n => {
+            if (n.nodeType === 1) {
+              removedElements.add(n as Element);
+            }
+          });
+        } else if (mutation.type === 'attributes') {
+          // Handle dynamic shadow root attachments
+          const target = mutation.target as Element;
+          if (target.shadowRoot && !this.rootSet.has(target.shadowRoot)) {
+            this._scanAll(target.shadowRoot);
+          }
         }
       }
-      if (needRescan) {
-        this._retranslate();
+      
+      // Clean up removed elements from cache
+      removedElements.forEach(el => {
+        this.targetMap.delete(el);
+      });
+      
+      // Process new elements if meaningful changes detected
+      if (addedElements.size > 0) {
+        // Batch process after a short delay to avoid excessive re-scanning
+        clearTimeout(this._batchTimer);
+        this._batchTimer = setTimeout(() => {
+          addedElements.forEach(el => {
+            const targets = this._collectTargets(el.getRootNode() as Document | ShadowRoot, this.rule.selector);
+            targets.forEach(target => {
+              if (!this.targetMap.has(target)) {
+                this.targetMap.set(target, {});
+                if (this.rule.trigger === 'scroll') {
+                  this._observeVisible(target);
+                } else if (this.rule.trigger === 'hover') {
+                  this._bindHover(target);
+                } else if (this.rule.trigger === 'open') {
+                  this._render(target);
+                }
+              }
+            });
+          });
+        }, 100);
       }
     });
     
     this.rootSet.forEach(root => {
-      this.mo!.observe(root, { childList: true, subtree: true });
+      this.mo!.observe(root, { 
+        childList: true, 
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['shadowroot'] // Watch for shadow root changes
+      });
     });
   }
+  
+  private _batchTimer?: ReturnType<typeof setTimeout>;
 
   private _restoreAll(): void {
     this.targetMap.forEach((cache, node) => {
@@ -418,9 +632,16 @@ export class DomTranslator {
       
       HTMLElement.prototype.attachShadow = function(init: ShadowRootInit) {
         const root = self._origAttachShadow!.apply(this, [init]);
-        self.rootSet.add(root);
-        self._ensureCssFor(root);
-        self._retranslate();
+        
+        // Defer processing to allow component initialization
+        requestAnimationFrame(() => {
+          if (self.rootSet.size > 0) { // Only if translator is active
+            self.rootSet.add(root);
+            self._ensureCssFor(root);
+            self._scanAll(root);
+          }
+        });
+        
         return root;
       };
     }

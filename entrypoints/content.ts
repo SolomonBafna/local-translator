@@ -115,7 +115,10 @@ export default defineContentScript({
           'td',
           'th',
           'blockquote',
-          'figcaption'
+          'figcaption',
+          'div.text',
+          'div.content',
+          'span.text'
         ].join('; '),
         
         // Preserve important elements
@@ -162,16 +165,24 @@ export default defineContentScript({
         minLen: 10,
         maxLen: 5000,
         translateTitle: false,
+        
+        // New segmentation options for intelligent splitting
+        segmentOptions: {
+          maxChunkSize: 800,  // Optimal size for translation quality
+          minChunkSize: 30,   // Minimum meaningful text
+          preserveSentences: true,  // Keep sentences intact
+          preserveContext: true,    // Add context for better translation
+        },
       };
 
       const setting = {
         hostTag: 'x-local-trans',
-        reflowDebounce: 500,
+        reflowDebounce: 300,  // Faster response to DOM changes
         visibleThreshold: 0.1,
         skipTags: [
           'style', 'script', 'noscript', 'svg', 'img', 'video', 'audio',
           'textarea', 'input', 'button', 'select', 'option', 'iframe',
-          'code', 'pre', 'x-local-trans'
+          'code', 'pre', 'x-local-trans', 'math', 'object', 'embed'
         ],
       };
 
@@ -250,16 +261,22 @@ export default defineContentScript({
         minLen: 1,
         maxLen: 10000,
         translateTitle: false,
+        segmentOptions: {
+          maxChunkSize: 500,  // Smaller chunks for paragraph translation
+          minChunkSize: 1,
+          preserveSentences: true,
+          preserveContext: false,  // No context needed for single paragraphs
+        },
       };
 
       const tempSetting = {
         hostTag: 'x-local-trans',
-        reflowDebounce: 500,
+        reflowDebounce: 100,  // Fast response for one-shot translation
         visibleThreshold: 0.1,
         skipTags: [
           'style', 'script', 'noscript', 'svg', 'img', 'video', 'audio',
           'textarea', 'input', 'button', 'select', 'option', 'iframe',
-          'code', 'pre', 'x-local-trans'
+          'code', 'pre', 'x-local-trans', 'math', 'object', 'embed'
         ],
       };
 

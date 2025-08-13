@@ -428,9 +428,20 @@ function App() {
 
       {/* Footer */}
       <div className="border-t border-gray-200 px-4 py-3 bg-gray-50">
-        <p className="text-xs text-gray-600 text-center">
-          Powered by Chrome Translator API
-        </p>
+        <div className="flex items-center justify-between">
+          <p className="text-xs text-gray-600">
+            Powered by Chrome Translator API
+          </p>
+          <button
+            onClick={() => {
+              const translatorUrl = (browser.runtime as any).getURL('translator.html');
+              browser.tabs.create({ url: translatorUrl });
+            }}
+            className="text-xs text-blue-600 hover:text-blue-700 underline transition-colors"
+          >
+            Open Translator
+          </button>
+        </div>
       </div>
     </div>
   );

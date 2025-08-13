@@ -1,3 +1,4 @@
+/// <reference path="../types/chrome-translation.d.ts" />
 import { DomTranslator } from '../lib/dom-translator';
 import { browser } from 'wxt/browser';
 import { storage } from '../lib/storage';
@@ -51,21 +52,24 @@ export default defineContentScript({
       return;
     }
 
-    let chromeTranslator: any = null;
-    let creatingTranslator: Promise<any> | null = null;
+    let chromeTranslator: ChromeTranslator | null = null;
+    let creatingTranslator: Promise<ChromeTranslator> | null = null;
     let domTranslator: DomTranslator | null = null;
+    let altClickEnabled = false;
+    let altClickHandler: ((e: MouseEvent) => void) | null = null;
 
     // Create translator (must be called from a user gesture)
     const createTranslator = async () => {
       if (chromeTranslator || creatingTranslator) return creatingTranslator;
-      creatingTranslator = (self as any).Translator.create({
-        sourceLanguage: 'en',
+      creatingTranslator = self.Translator!.create({
+        // Let Chrome auto-detect the source language when available
+        sourceLanguage: 'auto',
         targetLanguage: 'zh-Hans',
-      }).then((tr: any) => {
+      }).then((tr) => {
         chromeTranslator = tr;
         console.log('[LocalTranslator] Chrome Translator initialized');
         return tr;
-      }).catch((err: any) => {
+      }).catch((err) => {
         console.error('[LocalTranslator] Failed to create translator:', err);
         throw err;
       }).finally(() => {
@@ -206,8 +210,8 @@ export default defineContentScript({
     }, { once: true });
 
 
-    // Handle click with modifier key for paragraph translation (one-shot, no observers)
-    document.addEventListener('click', async (e) => {
+    // Alt/Option click paragraph translation (one-shot, no observers)
+    const onAltClick = async (e: MouseEvent) => {
       // Check if Option/Alt key is pressed
       if (!e.altKey) return;
       
@@ -288,7 +292,23 @@ export default defineContentScript({
       await tempTranslator.translateElement(elementToTranslate);
 
       console.log('[LocalTranslator] Translated paragraph on Alt+Click');
-    }, true);
+    };
+
+    const enableAltClick = () => {
+      if (altClickEnabled) return;
+      altClickHandler = (e) => onAltClick(e);
+      document.addEventListener('click', altClickHandler, true);
+      altClickEnabled = true;
+    };
+
+    const disableAltClick = () => {
+      if (!altClickEnabled) return;
+      if (altClickHandler) {
+        document.removeEventListener('click', altClickHandler, true);
+      }
+      altClickHandler = null;
+      altClickEnabled = false;
+    };
 
 
     console.log('[LocalTranslator] Content script initialized');
@@ -308,6 +328,7 @@ export default defineContentScript({
             // Initialize DOM translation in manual mode
             initDomTranslation(false).then(() => {
               console.log('[LocalTranslator] Translation auto-enabled');
+              enableAltClick();
             });
           });
       }
@@ -354,6 +375,7 @@ export default defineContentScript({
               // Initialize in manual mode (no auto-translate)
               await initDomTranslation(false);
               console.log('[LocalTranslator] Manual translation mode enabled via popup');
+              enableAltClick();
               sendResponse({ 
                 success: true, 
                 translatorReady: !!chromeTranslator,
@@ -369,6 +391,7 @@ export default defineContentScript({
             domTranslator = null;
             console.log('[LocalTranslator] DOM translation disabled via popup');
           }
+          disableAltClick();
           sendResponse({ success: true });
           return;
         }
@@ -430,5 +453,21 @@ export default defineContentScript({
         }
       }
     });
+
+    // Dispose translator and cleanup on pagehide
+    window.addEventListener('pagehide', async () => {
+      disableAltClick();
+      if (domTranslator) {
+        domTranslator.unregister();
+        domTranslator = null;
+      }
+      try {
+        await chromeTranslator?.dispose?.();
+      } catch (e) {
+        console.warn('[LocalTranslator] Translator dispose failed:', e);
+      } finally {
+        chromeTranslator = null;
+      }
+    }, { once: true });
   },
 });

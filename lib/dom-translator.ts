@@ -180,8 +180,9 @@ export class DomTranslator {
 
   // Translate a single element without registering observers or scanning.
   async translateElement(node: Element): Promise<void> {
-    // Ensure minimal CSS is present for the current document root.
-    this._ensureCssFor(document);
+    // Ensure minimal CSS is present for the node's root (Document or ShadowRoot).
+    const root = (node.getRootNode && (node.getRootNode() as Document | ShadowRoot)) || document;
+    this._ensureCssFor(root);
     await this._render(node);
   }
 

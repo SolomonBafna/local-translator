@@ -62,8 +62,8 @@ export default defineContentScript({
     const createTranslator = async () => {
       if (chromeTranslator || creatingTranslator) return creatingTranslator;
       creatingTranslator = self.Translator!.create({
-        // Let Chrome auto-detect the source language when available
-        sourceLanguage: 'auto',
+        // Default to English as source language
+        sourceLanguage: 'en',
         targetLanguage: 'zh-Hans',
       }).then((tr) => {
         chromeTranslator = tr;

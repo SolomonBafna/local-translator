@@ -9,7 +9,7 @@ declare global {
 
   interface TranslatorFactory {
     create(options: {
-      sourceLanguage?: string; // prefer 'auto' when available
+      sourceLanguage?: string; // BCP-47 language tag (e.g., 'en', 'zh-Hans')
       targetLanguage: string;
     }): Promise<ChromeTranslator>;
   }

@@ -11,7 +11,7 @@ interface Rule {
   maxLen?: number;
   selectStyle?: string;
   parentStyle?: string;
-  textStyle?: 'fuzzy' | 'dashline';
+  textDecoration?: 'normal' | 'underline' | 'underline dashed' | 'underline dotted';
   onRenderStart?: (el: Element, rawText: string) => void;
   onRemove?: (el: Element) => void;
   translateTitle?: boolean;
@@ -28,6 +28,7 @@ interface Setting {
   visibleThreshold?: number;
   skipTags?: string[];
   hostTag?: string;
+  hostClass?: string;
 }
 
 interface Cache {
@@ -72,7 +73,7 @@ export class DomTranslator {
       maxLen: rule.maxLen ?? 8000,
       selectStyle: rule.selectStyle,
       parentStyle: rule.parentStyle,
-      textStyle: rule.textStyle ?? 'fuzzy',
+      textDecoration: rule.textDecoration ?? 'normal',
       onRenderStart: rule.onRenderStart,
       onRemove: rule.onRemove,
       translateTitle: rule.translateTitle ?? false,
@@ -87,6 +88,7 @@ export class DomTranslator {
         'textarea', 'input', 'button', 'select', 'option', 'iframe'
       ],
       hostTag: setting.hostTag ?? 'x-kt-trans',
+      hostClass: setting.hostClass ?? 'kt-translation',
     };
 
     this.translate = translate;
@@ -148,11 +150,17 @@ export class DomTranslator {
   }
 
   toggleStyle(): void {
-    const next = this.rule.textStyle === 'fuzzy' ? 'dashline' : 'fuzzy';
-    this.rule.textStyle = next;
+    const styles: Array<'normal' | 'underline' | 'underline dashed' | 'underline dotted'> = ['normal', 'underline', 'underline dashed', 'underline dotted'];
+    const currentIndex = styles.indexOf(this.rule.textDecoration);
+    const nextIndex = (currentIndex + 1) % styles.length;
+    this.setStyle(styles[nextIndex]);
+  }
+
+  setStyle(style: 'normal' | 'underline' | 'underline dashed' | 'underline dotted'): void {
+    this.rule.textDecoration = style;
     this.rootSet.forEach((root) => {
-      root.querySelectorAll(this.setting.hostTag).forEach((host) => {
-        (host as HTMLElement).setAttribute('data-style', next);
+      root.querySelectorAll(`${this.setting.hostTag}, .${this.setting.hostClass}`).forEach((host) => {
+        (host as HTMLElement).setAttribute('data-decoration', style);
       });
     });
   }
@@ -515,7 +523,8 @@ export class DomTranslator {
         };
 
         const host = document.createElement(this.setting.hostTag);
-        host.setAttribute('data-style', this.rule.textStyle);
+        host.setAttribute('data-decoration', this.rule.textDecoration);
+        host.setAttribute('data-mode', this.rule.displayMode);
 
         if (hasNestedTargets) {
           const lastDirect = getLastDirectTextNode(node);
@@ -733,31 +742,40 @@ export class DomTranslator {
       (root as Document | ShadowRoot).querySelector?.('style[data-kt-trans-css]') ||
       (root instanceof Document && root.getElementById('kt-trans-css'));
     if (has) return;
-    
+
+    const hostSel = `${this.setting.hostTag}, .${this.setting.hostClass}`;
     const css = `
-      ${this.setting.hostTag} {
+      ${hostSel}[data-mode="overlay"] {
         display: block;
         margin-top: 0.25em;
         line-height: inherit;
       }
-      ${this.setting.hostTag}[data-style="fuzzy"] {
-        filter: blur(0.2px);
-        opacity: 0.92;
+      ${hostSel}[data-mode="replace"] {
+        display: inline;
+        line-height: inherit;
       }
-      ${this.setting.hostTag}[data-style="dashline"] {
-        border-top: 1px dashed currentColor;
-        padding-top: 0.25em;
+      ${hostSel}[data-decoration="normal"] {
+        text-decoration: none;
+      }
+      ${hostSel}[data-decoration="underline"] {
+        text-decoration: underline;
+      }
+      ${hostSel}[data-decoration="underline dashed"] {
+        text-decoration: underline dashed;
+      }
+      ${hostSel}[data-decoration="underline dotted"] {
+        text-decoration: underline dotted;
       }
       .kt-term {
         font-style: normal;
         font-weight: 600;
       }
     `;
-    
+
     const style = document.createElement('style');
     style.textContent = css;
     style.setAttribute('data-kt-trans-css', '1');
-    
+
     if (root instanceof Document) {
       style.id = 'kt-trans-css';
       root.head.appendChild(style);

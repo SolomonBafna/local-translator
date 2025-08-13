@@ -12,7 +12,7 @@ interface TabInfo {
 interface TranslationSettings {
   enabled: boolean;
   displayMode: 'overlay' | 'replace';
-  textStyle: 'fuzzy' | 'dashline';
+  textDecoration: 'normal' | 'underline' | 'underline dashed' | 'underline dotted';
 }
 
 interface TranslatorCheckResponse {
@@ -20,18 +20,51 @@ interface TranslatorCheckResponse {
   chromeVersionSupported?: boolean;
 }
 
+// Check if current page is a system page that can't be translated
+const isSystemPageUrl = (url: string): boolean => {
+  if (!url) return true;
+  
+  const systemProtocols = [
+    'chrome://',
+    'chrome-extension://',
+    'about:',
+    'moz-extension://',
+    'edge://',
+    'opera://',
+    'brave://',
+    'vivaldi://'
+  ];
+  
+  return systemProtocols.some(protocol => url.startsWith(protocol));
+};
+
+const getSystemPageMessage = (url: string): string => {
+  if (!url || url === 'about:blank') return 'Blank page - no content to translate';
+  if (url.startsWith('chrome://')) return 'Chrome system page - translation not supported';
+  if (url.startsWith('chrome-extension://')) return 'Extension page - translation not supported';
+  if (url.startsWith('about:')) return 'System page - translation not supported';
+  if (url.startsWith('moz-extension://')) return 'Firefox extension page - translation not supported';
+  if (url.startsWith('edge://')) return 'Edge system page - translation not supported';
+  if (url.startsWith('opera://')) return 'Opera system page - translation not supported';
+  if (url.startsWith('brave://')) return 'Brave system page - translation not supported';
+  if (url.startsWith('vivaldi://')) return 'Vivaldi system page - translation not supported';
+  return 'System page - translation not supported';
+};
+
 function App() {
-  const isMac = navigator.platform.toLowerCase().includes('mac');
+  const isMac = navigator.userAgent.toLowerCase().includes('mac');
   const modifierKey = isMac ? 'Option' : 'Alt';
   const [currentTab, setCurrentTab] = useState<TabInfo | null>(null);
   const [settings, setSettings] = useState<TranslationSettings>({
     enabled: true, // Default to enabled
     displayMode: 'overlay',
-    textStyle: 'fuzzy',
+    textDecoration: 'normal',
   });
   const [isTranslatorAvailable, setIsTranslatorAvailable] = useState(false);
   const [chromeVersionSupported, setChromeVersionSupported] = useState(true);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [isTranslating, setIsTranslating] = useState(false);
+  const [isSystemPage, setIsSystemPage] = useState(false);
 
   useEffect(() => {
     // Load settings from storage first
@@ -47,34 +80,45 @@ function App() {
     // Get current tab info
     browser.tabs.query({ active: true, currentWindow: true }).then((tabs) => {
       if (tabs[0]) {
+        const tabUrl = tabs[0].url || '';
         setCurrentTab({
           id: tabs[0].id!,
-          url: tabs[0].url || '',
+          url: tabUrl,
           title: tabs[0].title || '',
         });
         
-        // Check if translator is available
-        browser.tabs.sendMessage(tabs[0].id!, { action: 'check_translator' })
-          .then((response: TranslatorCheckResponse) => {
-            setIsTranslatorAvailable(response?.available || false);
-            setChromeVersionSupported(response?.chromeVersionSupported !== false);
-          })
-          .catch((error) => {
-            console.error('Error checking translator:', error);
-            setIsTranslatorAvailable(false);
-            setChromeVersionSupported(true); // Assume true if can't check
-          });
+        // Check if this is a system page
+        setIsSystemPage(isSystemPageUrl(tabUrl));
+        
+        // Check if translator is available (skip for system pages)
+        if (!isSystemPageUrl(tabUrl)) {
+          browser.tabs.sendMessage(tabs[0].id!, { action: 'check_translator' })
+            .then((response: TranslatorCheckResponse) => {
+              setIsTranslatorAvailable(response?.available || false);
+              setChromeVersionSupported(response?.chromeVersionSupported !== false);
+            })
+            .catch((error) => {
+              console.error('Error checking translator:', error);
+              setIsTranslatorAvailable(false);
+              setChromeVersionSupported(true); // Assume true if can't check
+            });
+        } else {
+          setIsTranslatorAvailable(false);
+          setChromeVersionSupported(true);
+        }
 
-        // Get current settings
-        browser.tabs.sendMessage(tabs[0].id!, { action: 'get_settings' })
-          .then((response: any) => {
-            if (response?.settings) {
-              setSettings(response.settings);
-            }
-          })
-          .catch((error) => {
-            console.error('Error getting settings:', error);
-          });
+        // Get current settings (skip for system pages)
+        if (!isSystemPageUrl(tabUrl)) {
+          browser.tabs.sendMessage(tabs[0].id!, { action: 'get_settings' })
+            .then((response: any) => {
+              if (response?.settings) {
+                setSettings(response.settings);
+              }
+            })
+            .catch((error) => {
+              console.error('Error getting settings:', error);
+            });
+        }
       }
     });
   }, []);
@@ -115,12 +159,6 @@ function App() {
     }
   };
 
-  const toggleTextStyle = () => {
-    const newStyle = settings.textStyle === 'fuzzy' ? 'dashline' : 'fuzzy';
-    setSettings({ ...settings, textStyle: newStyle });
-    storage.updateSetting('textStyle', newStyle);
-    sendMessage('toggle_style');
-  };
 
   const changeDisplayMode = (mode: 'overlay' | 'replace') => {
     setSettings({ ...settings, displayMode: mode });
@@ -129,18 +167,47 @@ function App() {
   };
 
   const translateAll = () => {
-    if (!currentTab) return;
+    if (!currentTab || isTranslating) return;
     
+    setIsTranslating(true);
     browser.tabs.sendMessage(currentTab.id, { action: 'translate_all' })
       .then((response: any) => {
         console.log('Translate all sent successfully:', response);
-        setStatusMessage('Translating all content...');
-        setTimeout(() => setStatusMessage(null), 3000);
+        setTimeout(() => setIsTranslating(false), 2000);
       })
       .catch((error) => {
         console.error('Error translating all:', error);
+        setIsTranslating(false);
       });
   };
+
+  if (isSystemPage) {
+    return (
+      <div className="w-96 p-6 bg-white">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-10 h-10 bg-orange-50 rounded-lg flex items-center justify-center">
+            <svg className="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">System Page</h2>
+            <p className="text-sm text-gray-600">
+              {currentTab ? getSystemPageMessage(currentTab.url) : 'Translation not supported'}
+            </p>
+          </div>
+        </div>
+        <div className="bg-orange-50 rounded-lg p-4">
+          <p className="text-sm text-gray-700">
+            Translation is only available on regular web pages. System pages like Chrome settings, extensions, and blank pages cannot be translated.
+          </p>
+          <div className="mt-3 text-xs text-gray-600">
+            <p><strong>Current page:</strong> {currentTab?.url || 'Unknown'}</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (!isTranslatorAvailable) {
     return (
@@ -202,13 +269,29 @@ function App() {
     <div className="w-96 bg-white">
       {/* Header */}
       <div className="bg-gradient-to-r from-blue-500 to-purple-500 p-4">
-        <h1 className="text-xl font-bold text-white flex items-center gap-2">
-          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129" />
-          </svg>
-          Local Translator
-        </h1>
-        <p className="text-sm text-blue-50 mt-1">English → 中文简体</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-xl font-bold text-white flex items-center gap-2">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129" />
+              </svg>
+              Local Translator
+            </h1>
+            <p className="text-sm text-blue-50 mt-1">English → 中文简体</p>
+          </div>
+          <button
+            onClick={toggleTranslation}
+            className={`relative w-12 h-6 rounded-full transition-colors ${
+              settings.enabled ? 'bg-blue-300' : 'bg-gray-400'
+            }`}
+          >
+            <span
+              className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow-sm ${
+                settings.enabled ? 'translate-x-6' : 'translate-x-0'
+              }`}
+            />
+          </button>
+        </div>
       </div>
 
       {/* Status Message */}
@@ -221,26 +304,7 @@ function App() {
       )}
 
       {/* Main Controls */}
-      <div className="p-4 space-y-4">
-        {/* Toggle Button */}
-        <div className="flex items-center justify-between bg-gray-50 rounded-lg p-4">
-          <div>
-            <p className="font-medium text-gray-900">Translation</p>
-            <p className="text-sm text-gray-600">Enable page translation</p>
-          </div>
-          <button
-            onClick={toggleTranslation}
-            className={`relative w-12 h-6 rounded-full transition-colors ${
-              settings.enabled ? 'bg-blue-500' : 'bg-gray-300'
-            }`}
-          >
-            <span
-              className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow-sm ${
-                settings.enabled ? 'translate-x-6' : 'translate-x-0'
-              }`}
-            />
-          </button>
-        </div>
+      <div className="p-4 space-y-3">
 
         {settings.enabled && (
           <>
@@ -276,52 +340,90 @@ function App() {
               </p>
             </div>
 
-            {/* Text Style */}
+            {/* Translation Text Style */}
             <div className="bg-gray-50 rounded-lg p-4">
-              <p className="font-medium text-gray-900 mb-3">Text Style</p>
-              <button
-                onClick={toggleTextStyle}
-                className="w-full px-4 py-2 bg-white hover:bg-gray-100 rounded-lg text-sm transition-colors flex items-center justify-between border border-gray-300"
-              >
-                <span className="text-gray-700">Current: {settings.textStyle === 'fuzzy' ? 'Fuzzy' : 'Dashed Line'}</span>
-                <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-              </button>
+              <p className="font-medium text-gray-900 mb-3">Text Decoration</p>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => {
+                    setSettings({ ...settings, textDecoration: 'normal' });
+                    storage.updateSetting('textDecoration', 'normal');
+                    sendMessage('set_text_decoration', { style: 'normal' });
+                  }}
+                  className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    settings.textDecoration === 'normal'
+                      ? 'bg-blue-500 text-white'
+                      : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-100'
+                  }`}
+                >
+                  Normal
+                </button>
+                <button
+                  onClick={() => {
+                    setSettings({ ...settings, textDecoration: 'underline' });
+                    storage.updateSetting('textDecoration', 'underline');
+                    sendMessage('set_text_decoration', { style: 'underline' });
+                  }}
+                  className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    settings.textDecoration === 'underline'
+                      ? 'bg-blue-500 text-white'
+                      : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-100'
+                  }`}
+                >
+                  Underline
+                </button>
+                <button
+                  onClick={() => {
+                    setSettings({ ...settings, textDecoration: 'underline dashed' });
+                    storage.updateSetting('textDecoration', 'underline dashed');
+                    sendMessage('set_text_decoration', { style: 'underline dashed' });
+                  }}
+                  className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    settings.textDecoration === 'underline dashed'
+                      ? 'bg-blue-500 text-white'
+                      : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-100'
+                  }`}
+                >
+                  Dashed
+                </button>
+                <button
+                  onClick={() => {
+                    setSettings({ ...settings, textDecoration: 'underline dotted' });
+                    storage.updateSetting('textDecoration', 'underline dotted');
+                    sendMessage('set_text_decoration', { style: 'underline dotted' });
+                  }}
+                  className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    settings.textDecoration === 'underline dotted'
+                      ? 'bg-blue-500 text-white'
+                      : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-100'
+                  }`}
+                >
+                  Dotted
+                </button>
+              </div>
             </div>
 
             {/* Translation Actions */}
-            <div className="bg-gray-50 rounded-lg p-4">
-              <p className="font-medium text-gray-900 mb-3">Translation Actions</p>
-              <div className="space-y-2">
-                <button
-                  onClick={translateAll}
-                  className="w-full px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129" />
-                  </svg>
-                  <span>Translate All Content</span>
-                </button>
-                <div className="text-xs text-gray-600 mt-2 space-y-1">
-                  <p>• Click button above to translate all content</p>
-                  <p>• Hold {modifierKey} and click to translate paragraphs</p>
-                </div>
-              </div>
-            </div>
+            <button
+              onClick={translateAll}
+              disabled={isTranslating}
+              className="w-full px-4 py-2 bg-blue-500 hover:bg-blue-600 disabled:bg-blue-400 text-white rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
+            >
+              {isTranslating ? (
+                <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+              ) : (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129" />
+                </svg>
+              )}
+              <span>{isTranslating ? 'Translating...' : 'Translate Page'}</span>
+            </button>
+            <p className="text-xs text-gray-600 text-center">Hold {modifierKey} and click to translate paragraphs</p>
           </>
         )}
-
-        {/* Usage Instructions */}
-        <div className="bg-blue-50 rounded-lg p-4">
-          <p className="font-medium text-gray-900 mb-2 text-sm">How to Use</p>
-          <div className="space-y-1 text-xs text-gray-700">
-            <p>• Enable translation with the toggle above</p>
-            <p>• Click "Translate All Content" for full page</p>
-            <p>• Hold {modifierKey} and click any paragraph to translate it</p>
-            <p>• Click translated text again to remove translation</p>
-          </div>
-        </div>
       </div>
 
       {/* Footer */}

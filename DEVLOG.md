@@ -1,0 +1,11 @@
+- [x] wxt init
+- [x] main function，EN=>中
+- [ ] bug fixing
+- [ ] translate panel
+- [ ] local model download management
+- [ ] only for non-chinese(language detection)
+- [ ] only for main content
+- [ ] optimize for popular sites(reddit,x,hackernews,medium)
+- [ ] translation k-v caching
+- [ ] fix style under dark page
+- [ ] multi language support

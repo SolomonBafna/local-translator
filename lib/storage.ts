@@ -3,13 +3,13 @@ import { browser } from 'wxt/browser';
 export interface StoredSettings {
   enabled: boolean;
   displayMode: 'overlay' | 'replace';
-  textStyle: 'fuzzy' | 'dashline';
+  textDecoration: 'normal' | 'underline' | 'underline dashed' | 'underline dotted';
 }
 
 const DEFAULT_SETTINGS: StoredSettings = {
   enabled: true, // Enable by default
   displayMode: 'overlay',
-  textStyle: 'fuzzy',
+  textDecoration: 'normal',
 };
 
 export const storage = {

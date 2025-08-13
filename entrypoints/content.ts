@@ -6,6 +6,7 @@ import { storage } from '../lib/storage';
 interface Message {
   action: string;
   mode?: 'overlay' | 'replace';
+  style?: 'normal' | 'underline' | 'underline dashed' | 'underline dotted';
 }
 
 // Check if Chrome version meets minimum requirement
@@ -161,7 +162,7 @@ export default defineContentScript({
         
         displayMode: storedSettings.displayMode,
         trigger: translateAll ? 'open' as const : 'manual' as const,
-        textStyle: storedSettings.textStyle,
+        textDecoration: storedSettings.textDecoration,
         minLen: 10,
         maxLen: 5000,
         translateTitle: false,
@@ -177,6 +178,7 @@ export default defineContentScript({
 
       const setting = {
         hostTag: 'x-local-trans',
+        hostClass: 'lt-translation',
         reflowDebounce: 300,  // Faster response to DOM changes
         visibleThreshold: 0.1,
         skipTags: [
@@ -257,7 +259,7 @@ export default defineContentScript({
         keepSelector: 'img; a; button; code; pre; input; textarea; video; iframe; svg',
         displayMode: 'overlay' as const,
         trigger: 'manual' as const,
-        textStyle: 'fuzzy' as const,
+        textDecoration: 'normal' as const,
         minLen: 1,
         maxLen: 10000,
         translateTitle: false,
@@ -271,6 +273,7 @@ export default defineContentScript({
 
       const tempSetting = {
         hostTag: 'x-local-trans',
+        hostClass: 'lt-translation',
         reflowDebounce: 100,  // Fast response for one-shot translation
         visibleThreshold: 0.1,
         skipTags: [
@@ -333,7 +336,7 @@ export default defineContentScript({
               settings: {
                 enabled: domTranslator !== null,
                 displayMode: storedSettings.displayMode,
-                textStyle: storedSettings.textStyle,
+                textDecoration: storedSettings.textDecoration,
               },
             });
           });
@@ -374,6 +377,15 @@ export default defineContentScript({
           if (domTranslator) {
             domTranslator.toggleStyle();
             console.log('[LocalTranslator] Translation style toggled via popup');
+          }
+          sendResponse({ success: true });
+          return;
+        }
+        
+        case 'set_text_decoration': {
+          if (domTranslator && message.style) {
+            domTranslator.setStyle(message.style);
+            console.log('[LocalTranslator] Text decoration set to:', message.style);
           }
           sendResponse({ success: true });
           return;

@@ -430,7 +430,7 @@ function App() {
       <div className="border-t border-gray-200 px-4 py-3 bg-gray-50">
         <div className="flex items-center justify-between">
           <p className="text-xs text-gray-600">
-            Powered by Chrome Translator API
+            Powered by Chrome AI
           </p>
           <button
             onClick={() => {

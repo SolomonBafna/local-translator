@@ -12,12 +12,15 @@ const languages: Language[] = [
   { code: 'en', name: 'English', flag: '🇺🇸' },
 ];
 
+type TranslatorStatus = 'uninitialized' | 'initializing' | 'ready' | 'error';
+
 interface TranslatorState {
   sourceLanguage: Language;
   targetLanguage: Language;
   sourceText: string;
   translatedText: string;
   isTranslating: boolean;
+  isAutoTranslating: boolean;
   error: string | null;
 }
 
@@ -28,15 +31,16 @@ function TranslatorApp() {
     sourceText: '',
     translatedText: '',
     isTranslating: false,
+    isAutoTranslating: false,
     error: null,
   });
 
   const sourceTextareaRef = useRef<HTMLTextAreaElement>(null);
   const targetTextareaRef = useRef<HTMLTextAreaElement>(null);
   const chromeTranslatorRef = useRef<ChromeTranslator | null>(null);
-  const [isTranslatorReady, setIsTranslatorReady] = useState(false);
-  const [needsUserGesture, setNeedsUserGesture] = useState(false);
-  const initializationAttempted = useRef(false);
+  const [translatorStatus, setTranslatorStatus] = useState<TranslatorStatus>('uninitialized');
+  const initializationPromiseRef = useRef<Promise<boolean> | null>(null);
+  const lastTranslatedTextRef = useRef<string>('');
 
   // Check if Chrome version meets minimum requirement
   const isChromeVersionSupported = (): boolean => {
@@ -53,93 +57,100 @@ function TranslatorApp() {
   };
 
   // Initialize translator function
-  const initTranslator = async (isUserGesture = false) => {
-    console.log('Initializing translator...', { 
-      isUserGesture, 
-      source: state.sourceLanguage.code, 
-      target: state.targetLanguage.code 
+  const initTranslator = async (isUserGesture = false): Promise<boolean> => {
+    // If already initializing, return the existing promise
+    if (initializationPromiseRef.current) {
+      return initializationPromiseRef.current;
+    }
+    
+    const initPromise = (async () => {
+      console.log('Initializing translator...', { 
+        isUserGesture, 
+        source: state.sourceLanguage.code, 
+        target: state.targetLanguage.code 
+      });
+      
+      setTranslatorStatus('initializing');
+      
+      if (!isChromeVersionSupported()) {
+        setTranslatorStatus('error');
+        setState(prev => ({ ...prev, error: 'Chrome version 138 or higher required' }));
+        return false;
+      }
+
+      if (!('Translator' in self)) {
+        setTranslatorStatus('error');
+        setState(prev => ({ 
+          ...prev, 
+          error: 'Chrome Translator API not available. Please enable "Experimental Translation API" in chrome://flags' 
+        }));
+        return false;
+      }
+
+      try {
+        // Dispose of existing translator if it exists
+        if (chromeTranslatorRef.current) {
+          try {
+            await chromeTranslatorRef.current.dispose?.();
+          } catch (e) {
+            console.warn('Failed to dispose translator:', e);
+          }
+          chromeTranslatorRef.current = null;
+        }
+
+        // Create translator for the current language pair
+        console.log('Creating translator with params:', {
+          sourceLanguage: state.sourceLanguage.code,
+          targetLanguage: state.targetLanguage.code,
+        });
+        
+        const translator = await self.Translator!.create({
+          sourceLanguage: state.sourceLanguage.code,
+          targetLanguage: state.targetLanguage.code,
+        });
+        
+        console.log('Translator created successfully:', translator);
+        chromeTranslatorRef.current = translator;
+        setTranslatorStatus('ready');
+        setState(prev => ({ ...prev, error: null }));
+        return true;
+      } catch (err: any) {
+        console.error('Failed to create translator:', err);
+        
+        // Check if the error is due to needing a user gesture
+        if (err?.message?.includes('user gesture') || err?.message?.includes('user activation')) {
+          // Don't show error for user gesture requirement, just keep status as uninitialized
+          setTranslatorStatus('uninitialized');
+          // Don't set error state - we'll retry when user clicks translate
+        } else {
+          setTranslatorStatus('error');
+          setState(prev => ({ 
+            ...prev, 
+            error: `Failed to initialize translator: ${err?.message || 'Unknown error'}` 
+          }));
+        }
+        return false;
+      }
+    })();
+    
+    initializationPromiseRef.current = initPromise;
+    
+    // Clear the promise ref when done
+    initPromise.finally(() => {
+      initializationPromiseRef.current = null;
     });
     
-    setIsTranslatorReady(false);
-    setNeedsUserGesture(false);
-    
-    if (!isChromeVersionSupported()) {
-      setState(prev => ({ ...prev, error: 'Chrome version 138 or higher required' }));
-      return false;
-    }
-
-    if (!('Translator' in self)) {
-      setState(prev => ({ 
-        ...prev, 
-        error: 'Chrome Translator API not available. Please enable "Experimental Translation API" in chrome://flags' 
-      }));
-      return false;
-    }
-
-    try {
-      // Dispose of existing translator if it exists
-      if (chromeTranslatorRef.current) {
-        try {
-          await chromeTranslatorRef.current.dispose?.();
-        } catch (e) {
-          console.warn('Failed to dispose translator:', e);
-        }
-        chromeTranslatorRef.current = null;
-      }
-
-      // Create translator for the current language pair
-      console.log('Creating translator with params:', {
-        sourceLanguage: state.sourceLanguage.code,
-        targetLanguage: state.targetLanguage.code,
-      });
-      
-      const translator = await self.Translator!.create({
-        sourceLanguage: state.sourceLanguage.code,
-        targetLanguage: state.targetLanguage.code,
-      });
-      
-      console.log('Translator created successfully:', translator);
-      chromeTranslatorRef.current = translator;
-      setIsTranslatorReady(true);
-      setState(prev => ({ ...prev, error: null }));
-      initializationAttempted.current = true;
-      return true;
-    } catch (err: any) {
-      console.error('Failed to create translator:', err);
-      console.error('Error details:', {
-        message: err?.message,
-        stack: err?.stack,
-        name: err?.name,
-      });
-      
-      // Check if the error is due to needing a user gesture
-      if (err?.message?.includes('user gesture') || err?.message?.includes('user activation') || !isUserGesture) {
-        setNeedsUserGesture(true);
-        setState(prev => ({ 
-          ...prev, 
-          error: 'Click the "Initialize Translator" button to start' 
-        }));
-      } else {
-        setState(prev => ({ 
-          ...prev, 
-          error: `Failed to initialize translator: ${err?.message || 'Unknown error'}` 
-        }));
-      }
-      setIsTranslatorReady(false);
-      return false;
-    }
+    return initPromise;
   };
 
   // Try to initialize on mount (might fail if user gesture is required)
   useEffect(() => {
-    if (!initializationAttempted.current) {
-      initTranslator(false);
-    }
+    initTranslator(false);
   }, []); // Only run once on mount
 
   // Re-initialize when language changes (only if already initialized)
   useEffect(() => {
-    if (isTranslatorReady && initializationAttempted.current) {
+    if (translatorStatus === 'ready') {
       initTranslator(false);
     }
   }, [state.sourceLanguage.code, state.targetLanguage.code]);
@@ -167,20 +178,24 @@ function TranslatorApp() {
   };
 
   const handleTranslate = async () => {
-    if (!state.sourceText.trim()) return;
+    const trimmedText = state.sourceText.trim();
+    if (!trimmedText) return;
     
     // If translator is not ready, try to initialize it with user gesture
-    if (!isTranslatorReady || !chromeTranslatorRef.current) {
+    if (translatorStatus !== 'ready' || !chromeTranslatorRef.current) {
+      setState(prev => ({ ...prev, isTranslating: true, error: null }));
       const initialized = await initTranslator(true);
       if (!initialized) {
+        setState(prev => ({ ...prev, isTranslating: false }));
         return; // Error message already set in initTranslator
       }
+    } else {
+      setState(prev => ({ ...prev, isTranslating: true, error: null }));
     }
-
-    setState(prev => ({ ...prev, isTranslating: true, error: null }));
 
     try {
       const translated = await translateText(state.sourceText);
+      lastTranslatedTextRef.current = trimmedText; // Update last translated text for manual translation
       setState(prev => ({ ...prev, translatedText: translated }));
     } catch (err) {
       console.error('Translation failed:', err);
@@ -198,6 +213,7 @@ function TranslatorApp() {
       sourceText: prev.translatedText,
       translatedText: prev.sourceText,
     }));
+    lastTranslatedTextRef.current = ''; // Reset since we're swapping text
   };
 
   const handleSourceLanguageChange = (language: Language) => {
@@ -239,6 +255,7 @@ function TranslatorApp() {
       sourceText: '',
       translatedText: '',
     }));
+    lastTranslatedTextRef.current = ''; // Reset last translated text
     sourceTextareaRef.current?.focus();
   };
 
@@ -249,25 +266,34 @@ function TranslatorApp() {
   // Auto-translate with debouncing
   useEffect(() => {
     // Only auto-translate if translator is ready and there's text
-    if (state.sourceText.trim() && !state.isTranslating && isTranslatorReady) {
+    if (state.sourceText.trim() && !state.isTranslating && !state.isAutoTranslating && translatorStatus === 'ready') {
       const timeoutId = setTimeout(async () => {
-        if (!state.sourceText.trim() || !chromeTranslatorRef.current) return;
+        const trimmedText = state.sourceText.trim();
+        
+        // Check if content has actually changed from last translation
+        if (!trimmedText || !chromeTranslatorRef.current || trimmedText === lastTranslatedTextRef.current) {
+          return;
+        }
 
-        setState(prev => ({ ...prev, isTranslating: true, error: null }));
+        setState(prev => ({ ...prev, isAutoTranslating: true, error: null }));
 
         try {
           const translated = await translateText(state.sourceText);
-          setState(prev => ({ ...prev, translatedText: translated, isTranslating: false }));
+          lastTranslatedTextRef.current = trimmedText; // Update last translated text
+          setState(prev => ({ ...prev, translatedText: translated, isAutoTranslating: false }));
         } catch (err) {
           console.error('Auto-translation failed:', err);
           // Don't show error for auto-translation failures, just clear the translation
-          setState(prev => ({ ...prev, translatedText: '', isTranslating: false }));
+          setState(prev => ({ ...prev, translatedText: '', isAutoTranslating: false }));
         }
       }, 1000); // Debounce translation by 1 second
       
       return () => clearTimeout(timeoutId);
+    } else if (!state.sourceText.trim()) {
+      // Clear last translated text when input is cleared
+      lastTranslatedTextRef.current = '';
     }
-  }, [state.sourceText, state.isTranslating, isTranslatorReady]);
+  }, [state.sourceText, state.isTranslating, state.isAutoTranslating, translatorStatus]);
 
   // Show error screen if translator is not available
   if (state.error && (state.error.includes('version') || state.error.includes('not available'))) {
@@ -404,6 +430,18 @@ function TranslatorApp() {
                   placeholder={`Translation will appear in ${state.targetLanguage.name}...`}
                   className="w-full h-64 p-3 border border-gray-300 rounded-lg resize-none bg-white"
                 />
+                {/* Spinner overlay during translation */}
+                {(state.isTranslating || state.isAutoTranslating) && (
+                  <div className="absolute inset-0 bg-white bg-opacity-75 rounded-lg flex items-center justify-center">
+                    <div className="flex flex-col items-center gap-2">
+                      <svg className="w-8 h-8 animate-spin text-blue-500" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      <span className="text-sm text-gray-600">Translating...</span>
+                    </div>
+                  </div>
+                )}
                 <div className="flex items-center justify-between mt-2">
                   <span className="text-xs text-gray-500">
                     {state.translatedText.length} characters
@@ -430,60 +468,55 @@ function TranslatorApp() {
           <div className="border-t border-gray-200 p-4 bg-gray-50">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-4">
-                {needsUserGesture && !isTranslatorReady ? (
-                  <button
-                    onClick={() => initTranslator(true)}
-                    className="px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium transition-colors flex items-center gap-2"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                    </svg>
-                    Initialize Translator
-                  </button>
-                ) : (
-                  <button
-                    onClick={handleTranslate}
-                    disabled={!state.sourceText.trim() || state.isTranslating}
-                    className="px-6 py-2 bg-blue-500 hover:bg-blue-600 disabled:bg-gray-300 text-white rounded-lg font-medium transition-colors flex items-center gap-2"
-                  >
-                    {state.isTranslating ? (
-                      <>
-                        <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                        Translating...
-                      </>
-                    ) : (
-                      <>
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129" />
-                        </svg>
-                        Translate
-                      </>
-                    )}
-                  </button>
-                )}
-                {!isTranslatorReady && !state.error && (
-                  <p className="text-amber-600 text-sm flex items-center gap-2">
-                    <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    Initializing translator...
-                  </p>
-                )}
+                <button
+                  onClick={handleTranslate}
+                  disabled={!state.sourceText.trim() || state.isTranslating || translatorStatus === 'initializing'}
+                  className="px-6 py-2 bg-blue-500 hover:bg-blue-600 disabled:bg-gray-300 text-white rounded-lg font-medium transition-colors flex items-center gap-2"
+                >
+                  {state.isTranslating ? (
+                    <>
+                      <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Translating...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129" />
+                      </svg>
+                      Translate
+                    </>
+                  )}
+                </button>
                 {state.error && (
                   <p className="text-red-600 text-sm">{state.error}</p>
                 )}
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-3">
                 <p className="text-xs text-gray-500">
-                  Powered by Chrome Translator API
+                  Powered by Chrome AI
                 </p>
-                {isTranslatorReady && (
-                  <span className="text-xs text-green-600">✓ Ready</span>
-                )}
+                <div className="flex items-center gap-1">
+                  <span 
+                    className={`text-lg leading-none ${
+                      translatorStatus === 'uninitialized' ? 'text-gray-400' :
+                      translatorStatus === 'initializing' ? 'text-amber-500' :
+                      translatorStatus === 'ready' ? 'text-green-500' :
+                      'text-red-500'
+                    }`}
+                    title={`Status: ${translatorStatus}`}
+                  >
+                    ●
+                  </span>
+                  <span className="text-xs text-gray-600">
+                    {translatorStatus === 'uninitialized' ? 'Unready' :
+                     translatorStatus === 'initializing' ? 'Initializing...' :
+                     translatorStatus === 'ready' ? 'Ready' :
+                     'Error'}
+                  </span>
+                </div>
               </div>
             </div>
           </div>

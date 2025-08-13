@@ -89,8 +89,8 @@ export class DomTranslator {
         'style', 'script', 'svg', 'img', 'video', 'audio',
         'textarea', 'input', 'button', 'select', 'option', 'iframe'
       ],
-      hostTag: setting.hostTag ?? 'x-kt-trans',
-      hostClass: setting.hostClass ?? 'kt-translation',
+      hostTag: setting.hostTag ?? 'x-loc-trans',
+      hostClass: setting.hostClass ?? 'loc-translation',
     };
 
     this.translate = translate;
@@ -610,7 +610,7 @@ export class DomTranslator {
         const re = new RegExp(escapeRegExp(pat), 'g');
         q = q.replace(re, () => {
           const ph = `[${keeps.length}]`;
-          keeps.push(`<i class="kt-term">${rep}</i>`);
+          keeps.push(`<i class="loc-term">${rep}</i>`);
           return ph;
         });
       });
@@ -636,7 +636,7 @@ export class DomTranslator {
             if (n.nodeType === 1) {
               const el = n as Element;
               // Skip our own elements
-              if (el.id === 'kt-trans-css' || 
+              if (el.id === 'loc-trans-css' || 
                   el.matches?.(this.setting.hostTag) || 
                   el.querySelector?.(this.setting.hostTag)) {
                 return;
@@ -750,8 +750,8 @@ export class DomTranslator {
   // 新增：在 Document 与各 ShadowRoot 中各自注入一次样式
   private _ensureCssFor(root: Document | ShadowRoot): void {
     const has =
-      (root as Document | ShadowRoot).querySelector?.('style[data-kt-trans-css]') ||
-      (root instanceof Document && root.getElementById('kt-trans-css'));
+      (root as Document | ShadowRoot).querySelector?.('style[data-loc-trans-css]') ||
+      (root instanceof Document && root.getElementById('loc-trans-css'));
     if (has) return;
 
     const hostSel = `${this.setting.hostTag}, .${this.setting.hostClass}`;
@@ -777,7 +777,7 @@ export class DomTranslator {
       ${hostSel}[data-decoration="underline dotted"] {
         text-decoration: underline dotted;
       }
-      .kt-term {
+      .loc-term {
         font-style: normal;
         font-weight: 600;
       }
@@ -785,10 +785,10 @@ export class DomTranslator {
 
     const style = document.createElement('style');
     style.textContent = css;
-    style.setAttribute('data-kt-trans-css', '1');
+    style.setAttribute('data-loc-trans-css', '1');
 
     if (root instanceof Document) {
-      style.id = 'kt-trans-css';
+      style.id = 'loc-trans-css';
       root.head.appendChild(style);
     } else {
       root.appendChild(style);

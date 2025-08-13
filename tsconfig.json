@@ -2,12 +2,15 @@
   "extends": "./.wxt/tsconfig.json",
   "compilerOptions": {
     "allowImportingTsExtensions": true,
-    "jsx": "react-jsx"
+    "jsx": "react-jsx",
+    "types": ["vitest/globals"]
   },
   "include": [
     ".wxt/**/*",
     "entrypoints/**/*",
     "lib/**/*",
-    "types/**/*"
+    "types/**/*",
+    "vitest.setup.ts",
+    "vitest.config.ts"
   ]
 }

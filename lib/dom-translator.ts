@@ -1,4 +1,5 @@
 import { TextSegmenter } from './text-segmenter';
+import { getLanguageDetector } from './language-detector';
 
 interface Rule {
   selector: string;
@@ -60,6 +61,7 @@ export class DomTranslator {
   private textSegmenter: TextSegmenter;
   private translationCache = new Map<string, string>();
   private translatingFingerprints = new Set<string>();
+  private languageDetector = getLanguageDetector();
 
   constructor(rule: Rule, setting: Setting, translate: (text: string) => Promise<string>) {
     this.rule = {
@@ -142,6 +144,7 @@ export class DomTranslator {
     this.textSegmenter.clearCache();
     this.translationCache.clear();
     this.translatingFingerprints.clear();
+    this.languageDetector.clearCache();
   }
 
   updateRule(patch: Partial<Rule>): void {
@@ -434,12 +437,19 @@ export class DomTranslator {
     const segments = this.textSegmenter.segmentElement(node, excludeSet.size ? excludeSet : undefined);
     if (segments.length === 0) return;
     
-    // 过滤分段长度
-    const validSegments = segments.filter(seg => {
+    // Filter segments by length
+    let validSegments = segments.filter(seg => {
       const len = seg.text.length;
       return len >= this.rule.minLen && len <= this.rule.maxLen;
     });
     if (validSegments.length === 0) return;
+    
+    // Filter to keep only English segments
+    validSegments = await this.languageDetector.filterEnglishSegments(validSegments);
+    if (validSegments.length === 0) {
+      console.log('[DomTranslator] No English text detected, skipping translation');
+      return;
+    }
     
     const transId = Math.random().toString(36).slice(2, 10);
     cache.lastId = transId;
@@ -819,6 +829,14 @@ export class DomTranslator {
     if (this._origTitle) return;
     
     this._origTitle = document.title;
+    
+    // Only translate if title is in English
+    const isEnglish = await this.languageDetector.isEnglish(this._origTitle);
+    if (!isEnglish) {
+      console.log('[DomTranslator] Title is not in English, skipping translation');
+      return;
+    }
+    
     try {
       const translated = await this.translate(this._origTitle);
       if (translated) {

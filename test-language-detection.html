@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Language Detection Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+        section {
+            margin: 30px 0;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        h2 {
+            color: #333;
+            border-bottom: 2px solid #007bff;
+            padding-bottom: 10px;
+        }
+        .lang-label {
+            display: inline-block;
+            padding: 2px 8px;
+            margin-left: 10px;
+            background: #f0f0f0;
+            border-radius: 3px;
+            font-size: 12px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <h1>Language Detection Test Page</h1>
+    
+    <section>
+        <h2>English Content <span class="lang-label">EN</span></h2>
+        <p>This is an English paragraph that should be translated. The Local Translator extension 
+        will detect that this text is in English and proceed with translation.</p>
+        <p>Another paragraph in English. This extension uses Chrome's built-in language detection 
+        API to ensure only English content is processed.</p>
+    </section>
+
+    <section>
+        <h2>Spanish Content <span class="lang-label">ES</span></h2>
+        <p>Este es un párrafo en español que no debería ser traducido. La extensión Local Translator 
+        detectará que este texto no está en inglés y lo omitirá.</p>
+        <p>Otro párrafo en español. La detección de idioma garantiza que solo se procese contenido en inglés.</p>
+    </section>
+
+    <section>
+        <h2>French Content <span class="lang-label">FR</span></h2>
+        <p>Ceci est un paragraphe en français qui ne devrait pas être traduit. L'extension Local Translator 
+        détectera que ce texte n'est pas en anglais et l'ignorera.</p>
+        <p>Un autre paragraphe en français. La détection de langue assure que seul le contenu anglais est traité.</p>
+    </section>
+
+    <section>
+        <h2>German Content <span class="lang-label">DE</span></h2>
+        <p>Dies ist ein deutscher Absatz, der nicht übersetzt werden sollte. Die Local Translator-Erweiterung 
+        erkennt, dass dieser Text nicht auf Englisch ist und überspringt ihn.</p>
+        <p>Ein weiterer Absatz auf Deutsch. Die Spracherkennung stellt sicher, dass nur englische Inhalte verarbeitet werden.</p>
+    </section>
+
+    <section>
+        <h2>Chinese Content <span class="lang-label">ZH</span></h2>
+        <p>这是一段中文段落，不应该被翻译。Local Translator 扩展会检测到这段文字不是英文，并跳过它。</p>
+        <p>另一段中文。语言检测确保只处理英文内容。</p>
+    </section>
+
+    <section>
+        <h2>Mixed Content <span class="lang-label">MIXED</span></h2>
+        <p>This paragraph starts in English and should be detected as English content for translation.</p>
+        <p>Este párrafo está en español y no debería ser traducido.</p>
+        <p>Back to English again. This should be translated since it's detected as English text.</p>
+    </section>
+
+    <section>
+        <h2>Short Text Samples <span class="lang-label">Various</span></h2>
+        <p>Hello</p>
+        <p>Bonjour</p>
+        <p>Hola</p>
+        <p>Hallo</p>
+        <p>你好</p>
+        <p>This is English</p>
+    </section>
+</body>
+</html>

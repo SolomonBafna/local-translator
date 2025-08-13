@@ -1,0 +1,62 @@
+# Chrome Language Detection Feature
+
+## Overview
+The Local Translator extension now includes language detection functionality that ensures only English content is translated. This improves translation accuracy and performance by filtering out non-English text before sending it to the Chrome Translator API.
+
+## Implementation Details
+
+### 1. Language Detection Module (`lib/language-detector.ts`)
+- Uses Chrome's `chrome.i18n.detectLanguage` API
+- Provides caching to avoid redundant detections
+- Configurable confidence threshold (default: 80%)
+- Supports batch detection for multiple text segments
+
+### 2. DOM Translator Integration
+- Language detection happens before translation
+- Only segments detected as English with sufficient confidence are translated
+- Fails open: if detection fails, content is still translated (safe fallback)
+
+### 3. User Settings
+- **Language Detection Toggle**: Enable/disable language detection
+- **Confidence Slider**: Adjust minimum confidence threshold (50-100%)
+- Settings persist in browser storage
+
+### 4. Configuration
+```javascript
+languageDetection: {
+  enabled: true,              // Toggle on/off
+  sourceLanguage: 'en',       // Expected source language
+  minConfidence: 80,          // Minimum confidence percentage
+}
+```
+
+## How It Works
+
+1. **Text Segmentation**: Content is split into manageable chunks
+2. **Language Detection**: Each segment is analyzed using Chrome's API
+3. **Filtering**: Only English segments meeting confidence threshold proceed
+4. **Translation**: Filtered segments are sent to Chrome Translator API
+5. **Display**: Translated content appears based on display mode settings
+
+## User Interface
+
+### Popup Controls
+- **Language Detection Toggle**: Enable/disable the feature
+- **Confidence Slider**: Fine-tune detection sensitivity
+- **Visual Feedback**: Shows current settings state
+
+## Performance Benefits
+- Reduces unnecessary API calls for non-English content
+- Improves translation quality by ensuring source language consistency
+- Caches detection results to avoid redundant processing
+
+## Browser Requirements
+- Chrome 138+ (for Translator API)
+- chrome.i18n API (standard in all Chrome versions)
+
+## Testing
+1. Enable language detection in popup
+2. Visit a multilingual website
+3. Verify only English content gets translated
+4. Adjust confidence slider to test sensitivity
+5. Check that Alt+Click translation respects language settings

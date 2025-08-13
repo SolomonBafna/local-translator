@@ -240,6 +240,7 @@ export class DomTranslator {
     const nodes: Element[] = [];
     const selectors = selectorSpec.split(';').map(s => s.trim()).filter(Boolean);
     
+    // 1) 基于 selector 初步收集
     selectors.forEach(sel => {
       if (sel.includes('::shadow::')) {
         const [outer, inner] = sel.split('::shadow::').map(s => s.trim());
@@ -253,7 +254,7 @@ export class DomTranslator {
       }
     });
     
-    // Helper to detect direct text at this node level (not counting descendants)
+    // Helper：检测元素"直属文本"（不含子孙）
     const hasDirectText = (el: Element): boolean => {
       for (const child of el.childNodes) {
         if (child.nodeType === Node.TEXT_NODE && (child.textContent || '').trim()) {
@@ -263,32 +264,88 @@ export class DomTranslator {
       return false;
     };
 
-    // Use computed styles for better filtering
+    const nodesSet = new Set(nodes);
+    const skip = new Set(this.setting.skipTags);
+
+    // 2) 补充：包含直属文本的祖先容器（从已命中节点向上回溯一次）
+    const containerCandidates: Element[] = [];
+    nodes.forEach(el => {
+      let parent = el.parentElement;
+      while (parent) {
+        if (!nodesSet.has(parent) && !skip.has(parent.localName) && hasDirectText(parent)) {
+          containerCandidates.push(parent);
+          nodesSet.add(parent);
+          break;
+        }
+        parent = parent.parentElement;
+      }
+    });
+    nodes.push(...containerCandidates);
+
+    // 2b) 新增：直接文本块捕获
+    // 捕捉"未被 selector 命中且没有任何元素子节点、但自身拥有可见直属文本的块级元素"（典型如 <div>纯文本</div>）
+    try {
+      const walker = document.createTreeWalker(
+        root as unknown as Node,
+        NodeFilter.SHOW_ELEMENT,
+        {
+          acceptNode: (node: Node) => {
+            const el = node as Element;
+            // 去重与跳过标签
+            if (nodesSet.has(el)) return NodeFilter.FILTER_SKIP;
+            if (skip.has(el.localName)) return NodeFilter.FILTER_SKIP;
+
+            // 可见性与显示类型（忽略 inline/contents，避免内联碎片）
+            const style = (el.ownerDocument?.defaultView || window).getComputedStyle(el);
+            if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') {
+              return NodeFilter.FILTER_SKIP;
+            }
+            if (style.display === 'inline' || style.display === 'contents') {
+              return NodeFilter.FILTER_SKIP;
+            }
+
+            // 必须：无任何元素子节点
+            let hasElementChild = false;
+            for (const ch of el.childNodes) {
+              if (ch.nodeType === Node.ELEMENT_NODE) { hasElementChild = true; break; }
+            }
+            if (hasElementChild) return NodeFilter.FILTER_SKIP;
+
+            // 必须：存在直属文本
+            if (!hasDirectText(el)) return NodeFilter.FILTER_SKIP;
+
+            return NodeFilter.FILTER_ACCEPT;
+          }
+        } as any
+      );
+      let walkNode: Node | null;
+      while ((walkNode = walker.nextNode())) {
+        const el = walkNode as Element;
+        nodes.push(el);
+        nodesSet.add(el);
+      }
+    } catch {
+      // 忽略潜在的 TreeWalker 兼容性问题
+    }
+
+    // 3) 过滤：可见性/跳过标签/去重/避免过度嵌套
     return nodes.filter(n => {
-      // Check if element should be skipped based on computed styles
+      // 基于计算样式的过滤
       const style = window.getComputedStyle(n);
-      
-      // Skip invisible elements
       if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') {
         return false;
       }
-      
-      // Skip elements with translation host already
+      // 已包含翻译宿主则跳过
       if (n.matches(this.setting.hostTag) || n.querySelector(this.setting.hostTag)) {
         return false;
       }
-      
-      // Skip based on tag name if it's in skip list
-      const skip = new Set(this.setting.skipTags);
+      // 跳过 skipTags
       if (skip.has(n.localName)) return false;
-      
-      // Skip custom elements that are likely components
+      // 跳过无文本的自定义元素外壳
       if (n.tagName.includes('-') && !n.shadowRoot && !n.textContent?.trim()) {
         return false;
       }
-      
-      // Avoid nested selections, but keep containers that have their own direct text
-      // If n contains other selected nodes, keep n only if it has direct text to translate
+      // 避免嵌套选择：仅当自身拥有直属文本时才保留"包含其他已选节点"的容器
       const containsOther = nodes.some(m => m !== n && n.contains(m));
       if (!containsOther) return true;
       return hasDirectText(n);
@@ -344,8 +401,8 @@ export class DomTranslator {
     
     this.rule.onRenderStart?.(node, raw);
     
-    // Use the new text segmenter for intelligent splitting
-    // Exclude nested target elements so containers only translate their direct text
+    // 使用新的分段器进行智能切分
+    // 为了只翻译容器的直属文本，排除其内部再次匹配到的目标节点
     const excludeSet = new Set<Element>();
     try {
       const selectors = this.rule.selector.split(';').map(s => s.trim()).filter(Boolean);
@@ -358,78 +415,51 @@ export class DomTranslator {
           node.querySelectorAll(sel).forEach(e => excludeSet.add(e));
         }
       });
-      // Do not exclude the node itself
+      // 不排除自身
       excludeSet.delete(node);
     } catch {
-      // Best effort; on selector errors, proceed without exclusions
+      // 容错：选择器异常时不排除
       excludeSet.clear();
     }
 
     const segments = this.textSegmenter.segmentElement(node, excludeSet.size ? excludeSet : undefined);
     if (segments.length === 0) return;
     
-    // Filter segments by size
+    // 过滤分段长度
     const validSegments = segments.filter(seg => {
       const len = seg.text.length;
       return len >= this.rule.minLen && len <= this.rule.maxLen;
     });
-    
     if (validSegments.length === 0) return;
-    
-    const host = document.createElement(this.setting.hostTag);
-    host.setAttribute('data-style', this.rule.textStyle);
-    node.appendChild(host);
     
     const transId = Math.random().toString(36).slice(2, 10);
     cache.lastId = transId;
     this.targetMap.set(node, cache);
     
     try {
-      // Process segments with caching and batching
+      // 翻译（带缓存/并发去重）
       const translationPromises = validSegments.map(async (segment) => {
-        // Check cache first
         const cached = this.translationCache.get(segment.fingerprint);
         if (cached) {
           return { segment, translation: cached };
         }
-        
-        // Check if already translating
         if (this.translatingFingerprints.has(segment.fingerprint)) {
-          // Wait a bit and check cache again
           await new Promise(resolve => setTimeout(resolve, 100));
-          const cached = this.translationCache.get(segment.fingerprint);
-          if (cached) {
-            return { segment, translation: cached };
+          const again = this.translationCache.get(segment.fingerprint);
+          if (again) {
+            return { segment, translation: again };
           }
         }
-        
-        // Mark as translating
         this.translatingFingerprints.add(segment.fingerprint);
-        
         try {
-          // Add context if available
           let textToTranslate = segment.text;
-          if (segment.context?.before) {
-            textToTranslate = `...${segment.context.before} ${textToTranslate}`;
-          }
-          if (segment.context?.after) {
-            textToTranslate = `${textToTranslate} ${segment.context.after}...`;
-          }
-          
+          if (segment.context?.before) textToTranslate = `...${segment.context.before} ${textToTranslate}`;
+          if (segment.context?.after)  textToTranslate = `${textToTranslate} ${segment.context.after}...`;
           const translation = await this.translate(textToTranslate);
-          
-          // Extract the main translation (remove context markers)
           let cleanTranslation = translation;
-          if (segment.context?.before) {
-            cleanTranslation = cleanTranslation.replace(/^[^\s]*\s*/, '');
-          }
-          if (segment.context?.after) {
-            cleanTranslation = cleanTranslation.replace(/\s*[^\s]*$/, '');
-          }
-          
-          // Cache the translation
+          if (segment.context?.before) cleanTranslation = cleanTranslation.replace(/^[^\s]*\s*/, '');
+          if (segment.context?.after)  cleanTranslation = cleanTranslation.replace(/\s*[^\s]*$/, '');
           this.translationCache.set(segment.fingerprint, cleanTranslation);
-          
           return { segment, translation: cleanTranslation };
         } finally {
           this.translatingFingerprints.delete(segment.fingerprint);
@@ -437,37 +467,82 @@ export class DomTranslator {
       });
       
       const results = await Promise.all(translationPromises);
-      
       if (this.targetMap.get(node)?.lastId !== transId) {
-        host.remove();
+        // 已有更晚一次渲染，放弃当前结果
         return;
       }
       
-      // Build the final translated content
-      const frag = document.createDocumentFragment();
-      
       if (this.rule.displayMode === 'replace') {
-        // Replace mode: update text nodes in place
+        // 直接替换原文本
         results.forEach(({ segment, translation }) => {
           segment.nodes.forEach((textNode, index) => {
-            // Distribute translation across original text nodes
             const portionSize = Math.ceil(translation.length / segment.nodes.length);
             const start = index * portionSize;
             const portion = translation.slice(start, start + portionSize);
             textNode.textContent = portion;
           });
         });
-        host.remove();
       } else {
-        // Overlay mode: build new content
+        // Overlay：若节点内包含嵌套目标（如子级 p），把 host 放到"最后一个直属文本节点之后"
+        const selectors = this.rule.selector.split(';').map(s => s.trim()).filter(Boolean);
+        let hasNestedTargets = false;
+        for (const sel of selectors) {
+          if (!sel) continue;
+          if (sel.includes('::shadow::')) {
+            const [outer, inner] = sel.split('::shadow::').map(s => s.trim());
+            if (outer && inner) {
+              node.querySelectorAll(outer).forEach(el => {
+                const sr = (el as Element).shadowRoot;
+                if (sr && sr.querySelector(inner)) hasNestedTargets = true;
+              });
+            }
+          } else {
+            if (node.querySelector(sel)) { hasNestedTargets = true; }
+          }
+          if (hasNestedTargets) break;
+        }
+
+        // Helper：获取最后一个直属 Text 节点
+        const getLastDirectTextNode = (el: Element): Text | null => {
+          let last: Text | null = null;
+          el.childNodes.forEach(ch => {
+            if (ch.nodeType === Node.TEXT_NODE) {
+              const t = ch as Text;
+              if ((t.textContent || '').trim()) last = t;
+            }
+          });
+          return last;
+        };
+
+        const host = document.createElement(this.setting.hostTag);
+        host.setAttribute('data-style', this.rule.textStyle);
+
+        if (hasNestedTargets) {
+          const lastDirect = getLastDirectTextNode(node);
+          if (lastDirect) {
+            node.insertBefore(host, lastDirect.nextSibling);
+          } else {
+            node.appendChild(host);
+          }
+        } else {
+          node.appendChild(host);
+        }
+
+        // 拼装翻译内容
+        const frag = document.createDocumentFragment();
         results.forEach(({ translation }) => {
           frag.appendChild(document.createTextNode(translation + ' '));
         });
+        // 二次校验是否过期
+        if (this.targetMap.get(node)?.lastId !== transId) {
+          host.remove();
+          return;
+        }
         host.replaceChildren(frag);
       }
     } catch (err) {
       console.warn('[DomTranslator] Translation failed:', err);
-      host.remove();
+      // overlay 下 host 在上面才创建，这里无需额外移除
     }
   }
 

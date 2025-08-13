@@ -1,0 +1,38 @@
+**核心实现**
+- 入口文件: `src/contentScript/pageTranslator.js`
+- 段落收集: 函数 `getPiecesToTranslate(root)` 深度遍历 DOM，按“段落片段 piece”收
+集文本节点，返回二维结构 `[{nodes:[...], parentElement, topElement, bottomElemen
+t, isTranslated}]`。
+- 内联/块级边界: 通过 `htmlTagsInlineText` 与 `htmlTagsInlineIgnore`、`htmlTagsN
+oTranslate` 控制边界与跳过。遇到非内联元素、被忽略标签、`class="notranslate"`、`
+translate="no"`、`contentEditable` 时，结束当前 piece，开始新 piece。
+- Shadow DOM: 若元素存在 `shadowRoot`，递归其子树，边界规则相同。
+
+**最小文字段落划分**
+- 最小单元: 文本节点本身（`nodeType === 3`）。每个 piece 内是若干文本节点的顺序
+集合。
+- 分段阈值: 同一 piece 的累计字符数 `currentParagraphSize` 超过 1000 时强制切分
+，开启新 piece（避免单次请求过大）。
+- 父元素归属: 文本节点首次加入 piece 时确定 `parentElement`。若在 `OPTION` 中，
+则归属上层 `SELECT/DATALIST`；否则自下而上跳过内联元素，找到最近的非内联父元素。
+- 视口定位: 为懒加载翻译记录 `topElement`/`bottomElement`，由 `translateDynamica
+lly()` 以内/出屏判断触发翻译。
+- 结果映射: 翻译调用 `backgroundTranslateHTML(service, lang, pieces.map(p=>p.nod
+es.map(n=>filterKeywordsInText(n.textContent))))`。返回与输入同形的二维结果，逐
+节点替换。若 `dontSortResults` 开启，溢出结果合并到该 piece 最后一个节点。
+- 替换包装: `encapsulateTextNode(node)` 用 `<font>` 包装原文本节点并写入译文，以
+便应用双语样式与恢复原文。
+
+**站点与动态内容影响**
+- 选择范围: `src/contentScript/enhance.js` 的 `getNodesThatNeedToTranslate(root,
+ ctx)` 根据站点 `specialRules`、启发式容器选择（`getContainers`）与 `blockElemen
+ts`（如 H1-H6、P、LI、TABLE 等）挑出需要翻译的块，再交给 `getPiecesToTranslate` 
+做最小化切分。
+- 可选规则: `translateTag_pre` 决定是否把 `PRE` 视为忽略标签从而避免代码块参与分
+段。
+- 动态内容: `MutationObserver` 收集新增节点，周期性调用 `translateNewNodes()`，
+对新块重复上述分段与翻译流程。
+
+**总结**
+- 分段粒度=“块内连续的文本节点序列”，边界由非内联/特殊标签与1,000字符阈值决定。
+- 最小替换单位=单个文本节点；piece 只是批处理窗口，确保顺序与对齐。

